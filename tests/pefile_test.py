@@ -22,11 +22,13 @@ class Test_pefile(unittest.TestCase):
     def _load_test_files(self):
         """Load all the test files to be processed"""
 
-        test_files = list()
+        test_files = []
 
         for dirpath, dirname, filenames in os.walk(REGRESSION_TESTS_DIR):
-            for filename in (f for f in filenames if not f.endswith(".dmp")):
-                test_files.append(os.path.join(dirpath, filename))
+            test_files.extend(
+                os.path.join(dirpath, filename)
+                for filename in (f for f in filenames if not f.endswith(".dmp"))
+            )
 
         return test_files
 
@@ -46,14 +48,11 @@ class Test_pefile(unittest.TestCase):
                 pe_file_dict_data = pe.dump_dict()  # Make sure that it does not fail
                 pe_file_data = pe_file_data.replace("\n\r", "\n")
             except Exception as excp:
-                print(
-                    "Failed processing [%s] (%s)"
-                    % (os.path.basename(pe_filename), excp)
-                )
+                print(f"Failed processing [{os.path.basename(pe_filename)}] ({excp})")
                 failed = True
                 continue
 
-            control_data_filename = "%s.dmp" % pe_filename
+            control_data_filename = f"{pe_filename}.dmp"
 
             if not os.path.exists(control_data_filename):
                 print(
@@ -67,28 +66,24 @@ class Test_pefile(unittest.TestCase):
                 control_data_f.write(pe_file_data.encode("utf-8", "backslashreplace"))
                 continue
 
-            control_data_f = open(control_data_filename, "rb")
-            control_data = control_data_f.read()
-            control_data_f.close()
-
+            with open(control_data_filename, "rb") as control_data_f:
+                control_data = control_data_f.read()
             pe_file_data_hash = sha256(
                 pe_file_data.encode("utf-8", "backslashreplace")
             ).hexdigest()
             control_data_hash = sha256(control_data).hexdigest()
 
-            diff_lines_added_count = 0
-            diff_lines_removed_count = 0
-            lines_to_ignore = 0
-
             if control_data_hash != pe_file_data_hash:
                 print("\nHash differs for [%s]" % os.path.basename(pe_filename))
 
-                control_file_lines = [
-                    l for l in control_data.decode("utf-8").splitlines()
-                ]
+                control_file_lines = list(control_data.decode("utf-8").splitlines())
                 pefile_lines = pe_file_data.splitlines()
 
                 diff = difflib.ndiff(control_file_lines, pefile_lines)
+
+                diff_lines_added_count = 0
+                diff_lines_removed_count = 0
+                lines_to_ignore = 0
 
                 # check the diff
                 for line in diff:
@@ -135,19 +130,18 @@ class Test_pefile(unittest.TestCase):
                             tofile="new",
                         )
                     )
-                    error_diff_f = open("error_diff.txt", "ab")
-                    error_diff_f.write(b"\n________________________________________\n")
-                    error_diff_f.write(
-                        'Errors for file "{0}":\n'.format(pe_filename).encode(
-                            "utf-8", "backslashreplace"
+                    with open("error_diff.txt", "ab") as error_diff_f:
+                        error_diff_f.write(b"\n________________________________________\n")
+                        error_diff_f.write(
+                            'Errors for file "{0}":\n'.format(pe_filename).encode(
+                                "utf-8", "backslashreplace"
+                            )
                         )
-                    )
-                    error_diff_f.write(
-                        "\n".join([l for l in diff if not l.startswith(" ")]).encode(
-                            "utf-8", "backslashreplace"
+                        error_diff_f.write(
+                            "\n".join([l for l in diff if not l.startswith(" ")]).encode(
+                                "utf-8", "backslashreplace"
+                            )
                         )
-                    )
-                    error_diff_f.close()
                     print("\n".join(diff))
                     print("Diff saved to: error_diff.txt")
                     failed = True
@@ -253,7 +247,7 @@ class Test_pefile(unittest.TestCase):
 
         new_data = pe.write()
 
-        diff, differences = 0, list()
+        diff, differences = 0, []
         for idx in range(len(original_data)):
             if original_data[idx] != new_data[idx]:
 
@@ -432,7 +426,7 @@ class Test_pefile(unittest.TestCase):
         ]
 
         if isinstance(entry_point_data[0], int):
-            self.assertEqual([i for i in entry_point_data], good_ep_data)
+            self.assertEqual(list(entry_point_data), good_ep_data)
         else:
             self.assertEqual([ord(i) for i in entry_point_data], good_ep_data)
 
@@ -486,7 +480,7 @@ class Test_pefile(unittest.TestCase):
         ]
 
         if isinstance(entry_point_data[0], int):
-            self.assertEqual([i for i in entry_point_data], good_ep_data)
+            self.assertEqual(list(entry_point_data), good_ep_data)
         else:
             self.assertEqual([ord(i) for i in entry_point_data], good_ep_data)
 
@@ -602,10 +596,8 @@ class Test_pefile(unittest.TestCase):
             REGRESSION_TESTS_DIR,
             "pefile_unittest_data__resurrel_malware_rebased_0x400000",
         )
-        control_file_f = open(control_file, "rb")
-        control_file_data = control_file_f.read()
-        control_file_f.close()
-
+        with open(control_file, "rb") as control_file_f:
+            control_file_data = control_file_f.read()
         control_file_pe = os.path.join(REGRESSION_TESTS_DIR, "e05916.ex_")
         pe = pefile.PE(control_file_pe)
         rebased_data = pe.get_memory_mapped_image(ImageBase=0x400000)

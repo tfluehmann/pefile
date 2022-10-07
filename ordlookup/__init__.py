@@ -20,7 +20,7 @@ PY3 = sys.version_info > (3,)
 if PY3:
 
     def formatOrdString(ord_val):
-        return "ord{}".format(ord_val).encode()
+        return f"ord{ord_val}".encode()
 
 
 else:
@@ -36,10 +36,6 @@ def ordLookup(libname, ord_val, make_name=False):
     """
     names = ords.get(libname.lower())
     if names is None:
-        if make_name is True:
-            return formatOrdString(ord_val)
-        return None
+        return formatOrdString(ord_val) if make_name is True else None
     name = names.get(ord_val)
-    if name is None:
-        return formatOrdString(ord_val)
-    return name
+    return formatOrdString(ord_val) if name is None else name

@@ -683,7 +683,6 @@ def parse_strings(data, counter, l):
                 l[counter] = b(data[i : i + len_ * 2]).decode("utf-16le")
             except UnicodeDecodeError:
                 error_count += 1
-                pass
             if error_count >= 3:
                 break
             i += len_ * 2
@@ -713,10 +712,7 @@ def set_flags(obj, flag_field, flags):
     """
 
     for flag, value in flags:
-        if value & flag_field:
-            obj.__dict__[flag] = True
-        else:
-            obj.__dict__[flag] = False
+        obj.__dict__[flag] = bool(value & flag_field)
 
 
 def power_of_two(val):
@@ -749,9 +745,7 @@ class UnicodeStringWrapperPostProcessor:
         return self.decode("utf-8", "backslashreplace_")
 
     def decode(self, *args):
-        if not self.string:
-            return ""
-        return self.string.decode(*args)
+        return self.string.decode(*args) if self.string else ""
 
     def invalidate(self):
         """Make this instance None, to express it's no known string type."""
@@ -777,10 +771,7 @@ class UnicodeStringWrapperPostProcessor:
         except PEFormatError:
             return False
 
-        if len(data) < 2:
-            return False
-
-        return struct.unpack("<H", data)[0]
+        return False if len(data) < 2 else struct.unpack("<H", data)[0]
 
     def ask_unicode_16(self, next_rva_ptr):
         """The next RVA is taken to be the one immediately following this one.
@@ -959,10 +950,7 @@ class Structure:
 
         self.__all_zeroes__ = False
         self.__file_offset__ = file_offset
-        if name:
-            self.name = name
-        else:
-            self.name = format[0]
+        self.name = name or format[0]
 
     def __get_format__(self):
         return self.__format__
@@ -1036,16 +1024,12 @@ class Structure:
         return "\n".join(self.dump())
 
     def __repr__(self):
-        return "<Structure: %s>" % (
-            " ".join([" ".join(s.split()) for s in self.dump()])
-        )
+        return f'<Structure: {" ".join([" ".join(s.split()) for s in self.dump()])}>'
 
     def dump(self, indentation=0):
         """Returns a string representation of the structure."""
 
-        dump = []
-
-        dump.append("[{0}]".format(self.name))
+        dump = ["[{0}]".format(self.name)]
 
         printable_bytes = [
             ord(i) for i in string.printable if i not in string.whitespace
@@ -1062,9 +1046,9 @@ class Structure:
                         val_str = "{:<8X}".format(val)
                     else:
                         val_str = "0x{:<8X}".format(val)
-                    if key == "TimeDateStamp" or key == "dwTimeStamp":
+                    if key in ["TimeDateStamp", "dwTimeStamp"]:
                         try:
-                            val_str += " [%s UTC]" % time.asctime(time.gmtime(val))
+                            val_str += f" [{time.asctime(time.gmtime(val))} UTC]"
                         except ValueError:
                             val_str += " [INVALID TIME]"
                 else:
@@ -1084,23 +1068,24 @@ class Structure:
                         )
 
                 dump.append(
-                    "0x%-8X 0x%-3X %-30s %s"
-                    % (
-                        self.__field_offsets__[key] + self.__file_offset__,
-                        self.__field_offsets__[key],
-                        key + ":",
-                        val_str,
+                    (
+                        "0x%-8X 0x%-3X %-30s %s"
+                        % (
+                            self.__field_offsets__[key] + self.__file_offset__,
+                            self.__field_offsets__[key],
+                            f"{key}:",
+                            val_str,
+                        )
                     )
                 )
+
 
         return dump
 
     def dump_dict(self):
         """Returns a dictionary representation of the structure."""
 
-        dump_dict = {}
-
-        dump_dict["Structure"] = self.name
+        dump_dict = {"Structure": self.name}
 
         # Refer to the __set_format__ method for an explanation
         # of the following construct.
@@ -1109,7 +1094,7 @@ class Structure:
 
                 val = getattr(self, key)
                 if isinstance(val, (int, long)):
-                    if key == "TimeDateStamp" or key == "dwTimeStamp":
+                    if key in ["TimeDateStamp", "dwTimeStamp"]:
                         try:
                             val = "0x%-8X [%s UTC]" % (
                                 val,
@@ -1120,8 +1105,9 @@ class Structure:
                 else:
                     val = "".join(
                         chr(d) if chr(d) in string.printable else "\\x%02x" % d
-                        for d in [ord(c) if not isinstance(c, int) else c for c in val]
+                        for d in [c if isinstance(c, int) else ord(c) for c in val]
                     )
+
 
                 dump_dict[key] = {
                     "FileOffset": self.__field_offsets__[key] + self.__file_offset__,
@@ -1145,21 +1131,19 @@ class SectionStructure(Structure):
         self.VirtualAddress_adj = None
 
     def get_PointerToRawData_adj(self):
-        if self.PointerToRawData_adj is None:
-            if self.PointerToRawData is not None:
-                self.PointerToRawData_adj = self.pe.adjust_FileAlignment(
-                    self.PointerToRawData, self.pe.OPTIONAL_HEADER.FileAlignment
-                )
+        if self.PointerToRawData_adj is None and self.PointerToRawData is not None:
+            self.PointerToRawData_adj = self.pe.adjust_FileAlignment(
+                self.PointerToRawData, self.pe.OPTIONAL_HEADER.FileAlignment
+            )
         return self.PointerToRawData_adj
 
     def get_VirtualAddress_adj(self):
-        if self.VirtualAddress_adj is None:
-            if self.VirtualAddress is not None:
-                self.VirtualAddress_adj = self.pe.adjust_SectionAlignment(
-                    self.VirtualAddress,
-                    self.pe.OPTIONAL_HEADER.SectionAlignment,
-                    self.pe.OPTIONAL_HEADER.FileAlignment,
-                )
+        if self.VirtualAddress_adj is None and self.VirtualAddress is not None:
+            self.VirtualAddress_adj = self.pe.adjust_SectionAlignment(
+                self.VirtualAddress,
+                self.pe.OPTIONAL_HEADER.SectionAlignment,
+                self.pe.OPTIONAL_HEADER.FileAlignment,
+            )
         return self.VirtualAddress_adj
 
     def get_data(self, start=None, length=None, ignore_padding=False):
@@ -1188,11 +1172,7 @@ class SectionStructure(Structure):
                 start - self.get_VirtualAddress_adj()
             ) + self.get_PointerToRawData_adj()
 
-        if length is not None:
-            end = offset + length
-        else:
-            end = offset + self.SizeOfRawData
-
+        end = offset + length if length is not None else offset + self.SizeOfRawData
         if ignore_padding:
             end = min(end, offset + self.Misc_VirtualSize)
 
@@ -1319,6 +1299,9 @@ class SectionStructure(Structure):
 
 @lru_cache(maxsize=2048, copy=False)
 def set_bitfields_format(format):
+
+
+
     class Accumulator:
         def __init__(self, fmt, comp_fields):
             self._subfields = []
@@ -1333,7 +1316,7 @@ def set_bitfields_format(format):
         def wrap_up(self):
             if self._type is None:
                 return
-            self._format.append(self._type + "," + self._name)
+            self._format.append(f"{self._type},{self._name}")
             self._comp_fields[len(self._format) - 1] = (self._type, self._subfields)
             self._name = "~"
             self._type = None
@@ -1357,12 +1340,13 @@ def set_bitfields_format(format):
         def get_bits_left(self):
             return self._bits_left
 
+
     old_fmt = []
     comp_fields = {}
     ac = Accumulator(old_fmt, comp_fields)
 
     for elm in format[1]:
-        if not ":" in elm:
+        if ":" not in elm:
             ac.wrap_up()
             old_fmt.append(elm)
             continue
@@ -1387,7 +1371,7 @@ def set_bitfields_format(format):
 
     extended_keys = []
     for idx, val in enumerate(keys):
-        if not idx in comp_fields:
+        if idx not in comp_fields:
             extended_keys.append(val)
             continue
         _, sbf = comp_fields[idx]
@@ -1436,7 +1420,7 @@ class StructureWithBitfields(Structure):
         ) = set_bitfields_format(format)
         # create our own unpacked_data_elms to ensure they are not shared among
         # StructureWithBitfields instances with the same format string
-        self.__unpacked_data_elms__ = [None for i in range(self.__format_length__)]
+        self.__unpacked_data_elms__ = [None for _ in range(self.__format_length__)]
         self.__all_zeroes__ = False
         self.__file_offset__ = file_offset
         self.name = name if name != None else format[0]
@@ -1585,7 +1569,6 @@ class ImportData(DataContainer):
                         raise PEFormatError(
                             "The export name provided is longer than the existing one."
                         )
-                        pass
                     self.pe.set_bytes_at_offset(self.name_offset, val)
 
         self.__dict__[name] = val
@@ -1721,12 +1704,11 @@ class RelocationData(DataContainer):
             #
             word = self.struct.Data
 
-            if name == "type":
-                word = (val << 12) | (word & 0xFFF)
-            elif name == "rva":
-                offset = max(val - self.base_rva, 0)
-                word = (word & 0xF000) | (offset & 0xFFF)
+            if name == "rva":
+                word = word & 0xF000 | max(val - self.base_rva, 0) & 0xFFF
 
+            elif name == "type":
+                word = (val << 12) | (word & 0xFFF)
             # Store the modified data
             #
             self.struct.Data = word
@@ -1836,8 +1818,8 @@ class UnwindInfo(StructureWithBitfields):
         if len(data) < self._full_size:
             return None
 
-        if self.Version != 1 and self.Version != 2:
-            return "Unsupported version of UNWIND_INFO at " + hex(self.__file_offset__)
+        if self.Version not in [1, 2]:
+            return f"Unsupported version of UNWIND_INFO at {hex(self.__file_offset__)}"
 
         self.UnwindCodes = []
         ro = super(UnwindInfo, self).sizeof()
@@ -1846,7 +1828,7 @@ class UnwindInfo(StructureWithBitfields):
             self._code_info.__unpack__(data[ro : ro + self._code_info.sizeof()])
             ucode = PrologEpilogOpsFactory.create(self._code_info)
             if ucode is None:
-                return "Unknown UNWIND_CODE at " + hex(self.__file_offset__ + ro)
+                return f"Unknown UNWIND_CODE at {hex(self.__file_offset__ + ro)}"
 
             len_in_codes = ucode.length_in_code_structures(self._code_info, self)
             opc_size = self._code_info.sizeof() * len_in_codes
@@ -1934,7 +1916,7 @@ class UnwindInfo(StructureWithBitfields):
 
     def __pack__(self):
         data = bytearray(self._full_size)
-        data[0 : super(UnwindInfo, self).sizeof()] = super(UnwindInfo, self).__pack__()
+        data[:super(UnwindInfo, self).sizeof()] = super(UnwindInfo, self).__pack__()
         cur_offset = super(UnwindInfo, self).sizeof()
 
         for uc in self.UnwindCodes:
@@ -1954,9 +1936,10 @@ class UnwindInfo(StructureWithBitfields):
         return self._chained_entry
 
     def set_chained_function_entry(self, entry):
-        if self._chained_entry != None:
+        if self._chained_entry is None:
+            self._chained_entry = entry
+        else:
             raise PEFormatError("Chained function entry cannot be changed")
-        self._chained_entry = entry
 
 
 class PrologEpilogOp:
@@ -1991,7 +1974,7 @@ class PrologEpilogOpPushReg(PrologEpilogOp):
         return ("UNWIND_CODE_PUSH_NONVOL", ("B,CodeOffset", "B:4,UnwindOp", "B:4,Reg"))
 
     def __str__(self):
-        return ".PUSHREG " + REGISTERS[self.struct.Reg]
+        return f".PUSHREG {REGISTERS[self.struct.Reg]}"
 
 
 class PrologEpilogOpAllocLarge(PrologEpilogOp):
@@ -2019,7 +2002,7 @@ class PrologEpilogOpAllocLarge(PrologEpilogOp):
         )
 
     def __str__(self):
-        return ".ALLOCSTACK " + hex(self.get_alloc_size())
+        return f".ALLOCSTACK {hex(self.get_alloc_size())}"
 
 
 class PrologEpilogOpAllocSmall(PrologEpilogOp):
@@ -2035,7 +2018,7 @@ class PrologEpilogOpAllocSmall(PrologEpilogOp):
         return self.struct.AllocSizeInQwordsMinus8 * 8 + 8
 
     def __str__(self):
-        return ".ALLOCSTACK " + hex(self.get_alloc_size())
+        return f".ALLOCSTACK {hex(self.get_alloc_size())}"
 
 
 class PrologEpilogOpSetFP(PrologEpilogOp):
@@ -2073,7 +2056,7 @@ class PrologEpilogOpSaveReg(PrologEpilogOp):
         )
 
     def __str__(self):
-        return ".SAVEREG " + REGISTERS[self.struct.Reg] + ", " + hex(self.get_offset())
+        return f".SAVEREG {REGISTERS[self.struct.Reg]}, {hex(self.get_offset())}"
 
 
 class PrologEpilogOpSaveRegFar(PrologEpilogOp):
@@ -2092,7 +2075,7 @@ class PrologEpilogOpSaveRegFar(PrologEpilogOp):
         )
 
     def __str__(self):
-        return ".SAVEREG " + REGISTERS[self.struct.Reg] + ", " + hex(self.struct.Offset)
+        return f".SAVEREG {REGISTERS[self.struct.Reg]}, {hex(self.struct.Offset)}"
 
 
 class PrologEpilogOpSaveXMM(PrologEpilogOp):
@@ -2111,7 +2094,7 @@ class PrologEpilogOpSaveXMM(PrologEpilogOp):
         return self.struct.OffsetIn2Qwords * 16
 
     def __str__(self):
-        return ".SAVEXMM128 XMM" + str(self.struct.Reg) + ", " + hex(self.get_offset())
+        return f".SAVEXMM128 XMM{str(self.struct.Reg)}, {hex(self.get_offset())}"
 
 
 class PrologEpilogOpSaveXMMFar(PrologEpilogOp):
@@ -2130,7 +2113,7 @@ class PrologEpilogOpSaveXMMFar(PrologEpilogOp):
         return self.struct.Offset
 
     def __str__(self):
-        return ".SAVEXMM128 XMM" + str(self.struct.Reg) + ", " + hex(self.struct.Offset)
+        return f".SAVEXMM128 XMM{str(self.struct.Reg)}, {hex(self.struct.Offset)}"
 
 
 class PrologEpilogOpPushFrame(PrologEpilogOp):
