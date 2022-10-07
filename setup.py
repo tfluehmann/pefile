@@ -49,7 +49,7 @@ def _read_attr(attr_name):
         with open('pefile.py', 'r', encoding='utf-8') as f:
             match = re.search(regex, f.read())
     # Second item in the group is the value of attribute.
-    return match.group(1)
+    return match[1]
 
 
 class TestCommand(Command):
